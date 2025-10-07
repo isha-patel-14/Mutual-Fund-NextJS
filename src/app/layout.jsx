@@ -9,6 +9,8 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         <Navbar />
+        {/* Animated ambient backdrop */}
+        <div className="fixed inset-0 -z-10 animated-backdrop" />
         <AnimatePresence mode="wait">
           <motion.main
             initial={{ opacity: 0, y: 20 }}

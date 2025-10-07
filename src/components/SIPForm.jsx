@@ -39,6 +39,10 @@ export default function SIPForm({ schemeCode }) {
 
       const data = await response.json();
       if (response.ok) {
+        // map timeline dates to chart-friendly shape
+        if (data.timeline) {
+          data.chartData = data.timeline.map(t => ({ date: t.date, value: t.value }));
+        }
         setResult(data);
       } else {
         setError(data.error || 'Failed to calculate SIP returns');
@@ -79,6 +83,29 @@ export default function SIPForm({ schemeCode }) {
                 required
               />
             </div>
+
+            {/* Export CSV */}
+            {result.timeline && result.timeline.length > 0 && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    const headers = ['date','invested','nav','units','cumulativeUnits','value','skipped'];
+                    const rows = result.timeline.map(t => headers.map(h => t[h] ?? '').join(','));
+                    const csv = [headers.join(','), ...rows].join('\n');
+                    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `sip_${schemeCode}_${formData.from}_${formData.to}.csv`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-sm hover:bg-white/10"
+                >
+                  Download CSV
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -177,13 +204,13 @@ export default function SIPForm({ schemeCode }) {
             </div>
 
             {/* Investment Growth Chart */}
-            {result.investments && result.investments.length > 0 && (
+            {result.chartData && result.chartData.length > 0 && (
               <div className="glass p-6 rounded-xl">
                 <h3 className="text-lg font-semibold mb-4">Investment Growth</h3>
                 <div className="h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
-                      data={result.investments}
+                      data={result.chartData}
                       margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
@@ -200,12 +227,11 @@ export default function SIPForm({ schemeCode }) {
                           borderRadius: '0.5rem',
                           color: '#fff'
                         }}
-                        formatter={(value) => [`₹${value.toLocaleString()}`, 'Value']}
+                        formatter={(value) => [`₹${Number(value).toLocaleString()}`, 'Value']}
                       />
                       <Area
                         type="monotone"
-                        dataKey="amount"
-                        stackId="1"
+                        dataKey="value"
                         stroke="#2563eb"
                         fill="#2563eb"
                         fillOpacity={0.2}

@@ -1,45 +1,50 @@
-// Simple in-memory cache with TTL
+// Normalized scheme endpoint with simple per-code cache
 const schemeCache = new Map();
-const CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours in milliseconds
+const CACHE_TTL = 12 * 60 * 60 * 1000; // 12 hours
 
 export async function GET(request, { params }) {
   const { code } = params;
 
   try {
-    // Check cache
     const cached = schemeCache.get(code);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
       return Response.json(cached.data);
     }
 
-    // Fetch fresh data
-    const response = await fetch(`https://api.mfapi.in/mf/${code}`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch scheme data');
+  const fetchUrl = `https://www.mfapi.in/mf/${code}`;
+    let resp;
+    try {
+      resp = await fetch(fetchUrl);
+    } catch (err) {
+      return Response.json({ error: 'Failed to fetch scheme data', detail: err.message }, { status: 502 });
+    }
+    if (!resp || !resp.ok) {
+      const text = await resp?.text().catch(() => '<no-body>');
+      return Response.json({ error: 'Failed to fetch scheme data', detail: `upstream ${resp?.status}: ${text}` }, { status: 502 });
     }
 
-    const data = await response.json();
+    const raw = await resp.json();
 
-    // Update cache
-    schemeCache.set(code, {
-      data,
-      timestamp: Date.now()
-    });
+    // Normalize shape: ensure meta and data arrays
+    const data = {
+      meta: raw.meta || raw.scheme || {},
+      data: Array.isArray(raw.data) ? raw.data : (raw.data || [])
+    };
 
-    // Clean up old cache entries (optional)
-    if (schemeCache.size > 1000) { // Limit cache size
-      const oldestEntry = [...schemeCache.entries()]
-        .sort(([, a], [, b]) => a.timestamp - b.timestamp)[0];
-      if (oldestEntry) {
-        schemeCache.delete(oldestEntry[0]);
+    schemeCache.set(code, { data, timestamp: Date.now() });
+
+    // Keep cache size bounded
+    if (schemeCache.size > 2000) {
+      const oldest = [...schemeCache.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+      if (oldest) schemeCache.delete(oldest[0]);
+    }
+
+    return Response.json(data, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=21600, stale-while-revalidate=86400'
       }
-    }
-
-    return Response.json(data);
-  } catch (error) {
-    return Response.json(
-      { error: 'Failed to fetch scheme data' },
-      { status: 500 }
-    );
+    });
+  } catch (err) {
+    return Response.json({ error: 'Failed to fetch scheme data' }, { status: 500 });
   }
 }

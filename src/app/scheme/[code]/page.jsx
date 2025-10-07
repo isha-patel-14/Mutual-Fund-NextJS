@@ -14,6 +14,10 @@ import {
 import { RiLineChartLine, RiCalendarLine, RiMoneyDollarCircleLine } from 'react-icons/ri';
 import ReturnsTable from '@/components/ReturnsTable';
 import SIPForm from '@/components/SIPForm';
+import LumpsumForm from '@/components/LumpsumForm';
+import SWPForm from '@/components/SWPForm';
+import RollingReturnChart from '@/components/RollingReturnChart';
+import Loader from '@/components/Loader';
 
 export default function SchemePage({ params }) {
   const { code } = params;
@@ -54,10 +58,8 @@ export default function SchemePage({ params }) {
 
   if (loading) {
     return (
-      <div className="space-y-8">
-        {/* Loading skeletons */}
-        <div className="h-8 w-2/3 bg-white/5 rounded-lg shimmer" />
-        <div className="h-[400px] glass rounded-xl shimmer" />
+      <div className="space-y-6">
+        <Loader label="Fetching scheme & NAV history..." height={280} />
       </div>
     );
   }
@@ -70,6 +72,7 @@ export default function SchemePage({ params }) {
     { id: 'overview', label: 'Overview', icon: RiLineChartLine },
     { id: 'sip', label: 'SIP Calculator', icon: RiCalendarLine },
     { id: 'lumpsum', label: 'Lumpsum', icon: RiMoneyDollarCircleLine },
+    { id: 'swp', label: 'SWP Simulator', icon: RiMoneyDollarCircleLine }
   ];
 
   return (
@@ -151,6 +154,16 @@ export default function SchemePage({ params }) {
             <ReturnsTable schemeCode={code} />
           </div>
 
+          {/* Rolling Returns Analysis */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-4"
+          >
+            <h2 className="text-xl font-semibold">Rolling Returns</h2>
+            <RollingReturnChart schemeCode={code} />
+          </motion.div>
+
           {/* Scheme Details */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -194,13 +207,14 @@ export default function SchemePage({ params }) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          {/* Lumpsum calculator will be implemented later */}
-          <div className="glass p-6 rounded-xl">
-            <h2 className="text-xl font-semibold mb-4">Lumpsum Calculator</h2>
-            <p className="text-gray-400">Coming soon...</p>
-          </div>
+            <LumpsumForm schemeCode={code} />
         </motion.div>
       )}
+        {activeTab === 'swp' && (
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <SWPForm schemeCode={code} />
+          </motion.div>
+        )}
     </div>
   );
 }

@@ -1,83 +1,127 @@
 import { NextResponse } from 'next/server';
 
+function toDateOnly(d) {
+  const dt = new Date(d);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+// Returns the nav entry on or before the given date (nearest earlier)
+function findNavOnOrBefore(sortedHistoryAsc, targetDate) {
+  // binary search like approach
+  let lo = 0, hi = sortedHistoryAsc.length - 1, res = null;
+  const t = toDateOnly(targetDate).getTime();
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const midDate = toDateOnly(sortedHistoryAsc[mid].date).getTime();
+    if (midDate === t) return sortedHistoryAsc[mid];
+    if (midDate < t) {
+      res = sortedHistoryAsc[mid];
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return res;
+}
+
+function addMonths(date, n) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + n);
+  return d;
+}
+
 function calculateSIP(navHistory, amount, frequency, startDate, endDate) {
-  // Sort NAV history by date in ascending order
-  const sortedHistory = [...navHistory].sort((a, b) => 
-    new Date(a.date) - new Date(b.date)
-  );
+  // sort ascending by date (oldest first)
+  const sorted = [...navHistory].map(d => ({ ...d, date: d.date })).sort((a, b) => new Date(a.date) - new Date(b.date));
 
-  // Convert dates to Date objects
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+  const start = toDateOnly(startDate);
+  const end = toDateOnly(endDate);
+  if (end < start) return { error: 'End date must be after start date' };
 
+  const investments = [];
   let totalUnits = 0;
   let totalInvested = 0;
-  let investments = [];
 
-  // Determine investment dates based on frequency
-  let currentDate = new Date(start);
-  while (currentDate <= end) {
-    // Find closest NAV entry for the investment date
-    const navEntry = sortedHistory.find(entry => 
-      new Date(entry.date) >= currentDate
-    );
-
+  // build schedule
+  let current = new Date(start);
+  while (current <= end) {
+    // find NAV on or before current
+    const navEntry = findNavOnOrBefore(sorted, current);
     if (navEntry) {
-      const nav = parseFloat(navEntry.nav);
-      if (nav > 0) {  // Skip if NAV is 0 or invalid
+      const nav = parseFloat(navEntry.nav || navEntry.NetAssetValue || 0);
+      if (nav > 0) {
         const units = amount / nav;
         totalUnits += units;
         totalInvested += amount;
-        investments.push({
-          date: navEntry.date,
-          amount,
-          nav,
-          units
-        });
+        investments.push({ date: navEntry.date, amount, nav, units });
+      } else {
+        investments.push({ date: current.toISOString().split('T')[0], amount, nav: null, units: 0, skipped: true });
       }
+    } else {
+      // no earlier NAV available -> mark needs_review if all dates have no nav
+      investments.push({ date: current.toISOString().split('T')[0], amount, nav: null, units: 0, skipped: true });
     }
 
-    // Move to next investment date based on frequency
-    switch (frequency.toLowerCase()) {
+    // advance by frequency
+    switch ((frequency || 'monthly').toLowerCase()) {
       case 'monthly':
-        currentDate.setMonth(currentDate.getMonth() + 1);
+        current = addMonths(current, 1);
         break;
       case 'quarterly':
-        currentDate.setMonth(currentDate.getMonth() + 3);
+        current = addMonths(current, 3);
         break;
       case 'yearly':
-        currentDate.setFullYear(currentDate.getFullYear() + 1);
+        current = addMonths(current, 12);
         break;
       default:
         return { error: 'Invalid frequency' };
     }
   }
 
-  if (investments.length === 0) {
-    return { error: 'No valid investment dates found' };
+  const validInvestments = investments.filter(i => i.nav && i.nav > 0);
+  if (validInvestments.length === 0) {
+    return { error: 'No valid NAVs found for the selected range', needs_review: true };
   }
 
-  // Get latest NAV for current value calculation
-  const latestNAV = parseFloat(sortedHistory[0].nav);
+  // latest NAV: most recent available in history
+  const latestEntry = sorted[sorted.length - 1];
+  const latestNAV = parseFloat(latestEntry.nav || latestEntry.NetAssetValue || 0);
   const currentValue = totalUnits * latestNAV;
 
-  // Calculate returns
-  const absoluteReturn = ((currentValue - totalInvested) / totalInvested) * 100;
-  
-  // Calculate XIRR (simplified annual return)
-  const years = (end - start) / (365 * 24 * 60 * 60 * 1000);
-  const annualizedReturn = (Math.pow((currentValue / totalInvested), (1 / years)) - 1) * 100;
+  const absoluteReturn = totalInvested > 0 ? ((currentValue - totalInvested) / totalInvested) * 100 : 0;
+
+  // compute years between first valid investment date and last available date for annualized return
+  const firstDate = toDateOnly(new Date(validInvestments[0].date));
+  const lastDate = toDateOnly(new Date(latestEntry.date));
+  const years = Math.max( (lastDate - firstDate) / (365 * 24 * 60 * 60 * 1000), 0.0001);
+  const annualizedReturn = years > 0 ? (Math.pow((currentValue / totalInvested), (1 / years)) - 1) * 100 : null;
+
+  // build timeline: cumulative units and value after each investment date
+  let cumUnits = 0;
+  const timeline = investments.map(inv => {
+    if (inv.units) cumUnits += inv.units;
+    const value = cumUnits * latestNAV;
+    return {
+      date: inv.date,
+      invested: inv.amount,
+      nav: inv.nav,
+      units: parseFloat(inv.units ? inv.units.toFixed(6) : '0'),
+      cumulativeUnits: parseFloat(cumUnits.toFixed(6)),
+      value: parseFloat(value.toFixed(2)),
+      skipped: !!inv.skipped
+    };
+  });
 
   return {
     totalInvested: parseFloat(totalInvested.toFixed(2)),
     currentValue: parseFloat(currentValue.toFixed(2)),
-    totalUnits: parseFloat(totalUnits.toFixed(4)),
+    totalUnits: parseFloat(totalUnits.toFixed(6)),
     absoluteReturn: parseFloat(absoluteReturn.toFixed(2)),
-    annualizedReturn: parseFloat(annualizedReturn.toFixed(2)),
-    investments: investments.map(inv => ({
-      ...inv,
-      units: parseFloat(inv.units.toFixed(4))
-    }))
+    annualizedReturn: annualizedReturn !== null ? parseFloat(annualizedReturn.toFixed(2)) : null,
+    latestNAV: parseFloat(latestNAV.toFixed(4)),
+    timeline,
+    investments: validInvestments.map(inv => ({ ...inv, units: parseFloat(inv.units.toFixed(6)) }))
   };
 }
 
@@ -88,41 +132,33 @@ export async function POST(request, { params }) {
     const body = await request.json();
     const { amount, frequency, from, to } = body;
 
-    // Validate input
     if (!amount || !frequency || !from || !to) {
-      return NextResponse.json(
-        { error: 'Missing required parameters' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
     }
 
-    // Fetch scheme data
-    const response = await fetch(`https://api.mfapi.in/mf/${code}`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch scheme data');
+  const origin = new URL(request.url).origin;
+  const fetchUrl = `${origin}/api/scheme/${code}`;
+    let response;
+    try {
+      response = await fetch(fetchUrl);
+    } catch (err) {
+      return NextResponse.json({ error: 'Failed to fetch scheme data', detail: err.message }, { status: 502 });
+    }
+    if (!response || !response.ok) {
+      const body = await response?.text().catch(() => '<no-body>');
+      return NextResponse.json({ error: 'Failed to fetch scheme data', detail: `upstream ${response?.status}: ${body}` }, { status: 502 });
     }
 
-    const schemeData = await response.json();
-    const sipCalculation = calculateSIP(
-      schemeData.data,
-      parseFloat(amount),
-      frequency,
-      from,
-      to
-    );
+    const raw = await response.json();
+    const navHistory = Array.isArray(raw.data) ? raw.data : (raw.data || []);
 
-    if (sipCalculation.error) {
-      return NextResponse.json(
-        { error: sipCalculation.error },
-        { status: 400 }
-      );
+    const result = calculateSIP(navHistory, parseFloat(amount), frequency, from, to);
+    if (result.error) {
+      return NextResponse.json(result, { status: 400 });
     }
 
-    return NextResponse.json(sipCalculation);
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Failed to calculate SIP returns' },
-      { status: 500 }
-    );
+    return NextResponse.json(result);
+  } catch (err) {
+    return NextResponse.json({ error: 'Failed to calculate SIP returns' }, { status: 500 });
   }
 }

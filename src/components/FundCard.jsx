@@ -2,9 +2,9 @@
 
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { RiArrowRightLine } from 'react-icons/ri';
+import { RiArrowRightLine, RiStarFill, RiStarLine } from 'react-icons/ri';
 
-export default function FundCard({ fund }) {
+export default function FundCard({ fund, isFavorite = false, onToggleFavorite }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -17,6 +17,14 @@ export default function FundCard({ fund }) {
 
       {/* Content */}
       <div className="relative z-10">
+        {/* Favorite Star */}
+        <button
+          aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFavorite && onToggleFavorite(); }}
+          className={`absolute right-2 top-2 p-2 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 transition-colors ${isFavorite ? 'text-accent' : 'text-gray-300'}`}
+        >
+          {isFavorite ? <RiStarFill className="w-5 h-5" /> : <RiStarLine className="w-5 h-5" />}
+        </button>
         <h3 className="font-semibold text-lg mb-2 line-clamp-2 group-hover:text-accent transition-colors">
           {fund.schemeName}
         </h3>

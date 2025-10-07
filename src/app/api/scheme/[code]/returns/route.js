@@ -101,10 +101,18 @@ export async function GET(request, { params }) {
   }
 
   try {
-    // Fetch scheme data
-    const response = await fetch(`https://api.mfapi.in/mf/${code}`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch scheme data');
+    // Prefer our own cached scheme endpoint to reduce upstream load
+    const origin = new URL(request.url).origin;
+    const fetchUrl = `${origin}/api/scheme/${code}`;
+    let response;
+    try {
+      response = await fetch(fetchUrl);
+    } catch (err) {
+      return NextResponse.json({ error: 'Failed to fetch scheme data', detail: err.message }, { status: 502 });
+    }
+    if (!response || !response.ok) {
+      const body = await response?.text().catch(() => '<no-body>');
+      return NextResponse.json({ error: 'Failed to fetch scheme data', detail: `upstream ${response?.status}: ${body}` }, { status: 502 });
     }
 
     const schemeData = await response.json();
