@@ -14,7 +14,7 @@ import {
 import { RiLineChartLine, RiCalendarLine, RiMoneyDollarCircleLine } from 'react-icons/ri';
 import ReturnsTable from '@/components/ReturnsTable';
 import SIPForm from '@/components/SIPForm';
-import LumpsumForm from '@/components/LumpsumForm';
+import LumpsumCalculator from '@/components/LumpsumCalculator';
 import SWPForm from '@/components/SWPForm';
 import RollingReturnChart from '@/components/RollingReturnChart';
 import Loader from '@/components/Loader';
@@ -207,7 +207,7 @@ export default function SchemePage({ params }) {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
         >
-            <LumpsumForm schemeCode={code} />
+            <LumpsumCalculator schemeCode={code} />
         </motion.div>
       )}
         {activeTab === 'swp' && (

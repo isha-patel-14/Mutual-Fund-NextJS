@@ -25,7 +25,7 @@ export async function GET(request) {
       // serve from cache (but may still apply query filters below)
     } else {
       // Use canonical MFAPI endpoint with proper headers and timeout
-      const url = 'https://www.mfapi.in/mf';
+      const url = 'https://api.mfapi.in/mf';
       let response = null;
       try {
         const controller = new AbortController();
